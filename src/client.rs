@@ -1848,12 +1848,15 @@ impl Client {
         conn_type: ConnType,
         ipv4: bool,
     ) -> ResultType<Stream> {
-        let mut conn = connect_tcp(
-            ipv4_to_ipv6(check_port(relay_server, RELAY_PORT), ipv4),
-            CONNECT_TIMEOUT,
-        )
-        .await
-        .with_context(|| "Failed to connect to relay server")?;
+        let mut conn = match base::quic_relay::connect_if_configured(&relay_server, CONNECT_TIMEOUT).await? {
+            Some(conn) => conn,
+            None => connect_tcp(
+                ipv4_to_ipv6(check_port(relay_server, RELAY_PORT), ipv4),
+                CONNECT_TIMEOUT,
+            )
+            .await
+            .with_context(|| "Failed to connect to relay server")?,
+        };
         let mut msg_out = RendezvousMessage::new();
         msg_out.set_request_relay(RequestRelay {
             licence_key: key.to_owned(),

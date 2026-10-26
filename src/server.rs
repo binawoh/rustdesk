@@ -402,11 +402,14 @@ async fn create_relay_connection_(
     ipv4: bool,
     meta: ConnectionMeta,
 ) -> ResultType<()> {
-    let mut stream = socket_client::connect_tcp(
-        socket_client::ipv4_to_ipv6(crate::check_port(relay_server, RELAY_PORT), ipv4),
-        CONNECT_TIMEOUT,
-    )
-    .await?;
+    let mut stream = match base::quic_relay::connect_if_configured(&relay_server, CONNECT_TIMEOUT).await? {
+        Some(stream) => stream,
+        None => socket_client::connect_tcp(
+            socket_client::ipv4_to_ipv6(crate::check_port(relay_server, RELAY_PORT), ipv4),
+            CONNECT_TIMEOUT,
+        )
+        .await?,
+    };
     let mut msg_out = RendezvousMessage::new();
     let licence_key = crate::get_key(true).await;
     msg_out.set_request_relay(RequestRelay {

@@ -514,6 +514,60 @@ impl AsyncWrite for QuicStream {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn dropping_stream_delivers_queued_bytes_to_a_slow_reader() {
+        let certificate = rcgen::generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
+        let server_config = quinn::ServerConfig::with_single_cert(
+            vec![certificate.cert.der().clone()],
+            rustls::pki_types::PrivatePkcs8KeyDer::from(certificate.key_pair.serialize_der())
+                .into(),
+        )
+        .unwrap();
+        let server = Endpoint::server(server_config, "127.0.0.1:0".parse().unwrap()).unwrap();
+        let server_address = server.local_addr().unwrap();
+        let peer = tokio::spawn(async move {
+            let connection = server.accept().await.unwrap().await.unwrap();
+            let (mut send, mut recv) = connection.accept_bi().await.unwrap();
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            let received = recv.read_to_end(128 * 1024).await;
+            let _finished = send.finish();
+            received
+        });
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(certificate.cert.der().clone()).unwrap();
+        let mut endpoint = Endpoint::client("127.0.0.1:0".parse().unwrap()).unwrap();
+        endpoint.set_default_client_config(
+            quinn::ClientConfig::with_root_certificates(Arc::new(roots)).unwrap(),
+        );
+        let connection = endpoint
+            .connect(server_address, "localhost")
+            .unwrap()
+            .await
+            .unwrap();
+        let (send, recv) = connection.open_bi().await.unwrap();
+        let mut stream = QuicStream {
+            send,
+            recv: Some(recv),
+            session: Arc::new(Session {
+                endpoint,
+                connection,
+                http_driver: None,
+                runtime: tokio::runtime::Handle::current(),
+            }),
+        };
+        let payload = vec![0xa5; 64 * 1024];
+        tokio::io::AsyncWriteExt::write_all(&mut stream, &payload)
+            .await
+            .unwrap();
+        drop(stream);
+        let received = tokio::time::timeout(Duration::from_secs(5), peer)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(received, payload);
+    }
+
     #[test]
     fn relay_selection_and_hopping_config_are_bounded() {
         assert_eq!(canonical_relay("example.test"), "example.test:21117");

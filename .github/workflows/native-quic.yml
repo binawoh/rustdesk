@@ -14,6 +14,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: native-quic-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   transport:
     runs-on: windows-2022
@@ -48,6 +52,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
         with:
           toolchain: "1.85.0"
+          components: rustfmt
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           prefix-key: native-quic-bridge

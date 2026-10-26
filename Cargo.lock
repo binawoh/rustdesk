@@ -667,6 +667,7 @@ dependencies = [
  "protobuf",
  "protobuf-codegen",
  "quinn",
+ "rcgen",
  "rustls",
  "serde 1.0.228",
  "serde_derive",
@@ -3665,7 +3666,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10872b55cfb02a821b69dc7cf8dc6a71d6af25eb9a79662bec4a9d016056b3be"
 dependencies = [
  "bytes",
- "fastrand",
+ "fastrand 2.1.0",
  "futures-util",
  "http",
  "pin-project-lite",

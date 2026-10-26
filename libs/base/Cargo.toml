@@ -38,6 +38,9 @@ http = "1.3"
 [build-dependencies]
 protobuf-codegen = { version = "3.7" }
 
+[dev-dependencies]
+rcgen = "0.13"
+
 [target.'cfg(target_os = "windows")'.dependencies]
 # Every module the moved sources name, spelled out rather than left to feature
 # unification with the root crate.

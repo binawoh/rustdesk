@@ -6514,6 +6514,7 @@ checksum = "b9e20a958963c291dc322d98411f541009df2ced7b5a4f2bd52337638cfccf20"
 dependencies = [
  "bytes",
  "cfg_aliases 0.2.1",
+ "futures-io",
  "pin-project-lite",
  "quinn-proto",
  "quinn-udp",

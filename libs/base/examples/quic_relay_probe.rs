@@ -142,8 +142,16 @@ async fn main() -> Result<()> {
     stream.set_raw();
     let result = run(&mut stream, seconds).await;
     drop(stream);
-    if timeout(Duration::from_secs(5), peer.wait()).await.is_err() {
-        peer.kill().await?;
+    match timeout(Duration::from_secs(10), peer.wait()).await {
+        Ok(status) => {
+            if !status?.success() {
+                bail!("The VPS peer failed while closing the relay session");
+            }
+        }
+        Err(_) => {
+            peer.kill().await?;
+            bail!("The VPS peer did not close after the final message");
+        }
     }
     result
 }

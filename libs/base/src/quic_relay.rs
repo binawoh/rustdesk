@@ -210,6 +210,7 @@ async fn connect_inner(config: RelayConfig) -> Result<Stream> {
         endpoint,
         connection,
         http_driver: None,
+        runtime: tokio::runtime::Handle::current(),
     };
     let (mut driver, mut request_sender) =
         h3::client::new(h3_quinn::Connection::new(session.connection.clone())).await?;
@@ -265,8 +266,8 @@ async fn connect_inner(config: RelayConfig) -> Result<Stream> {
     Ok(Stream::Tcp(FramedStream::from(
         QuicStream {
             send,
-            recv,
-            _session: session,
+            recv: Some(recv),
+            session: Arc::new(session),
         },
         local,
     )))
@@ -429,6 +430,7 @@ struct Session {
     endpoint: Endpoint,
     connection: quinn::Connection,
     http_driver: Option<JoinHandle<()>>,
+    runtime: tokio::runtime::Handle,
 }
 
 impl Drop for Session {
@@ -450,8 +452,31 @@ impl Drop for Session {
 
 struct QuicStream {
     send: SendStream,
-    recv: RecvStream,
-    _session: Session,
+    recv: Option<RecvStream>,
+    session: Arc<Session>,
+}
+
+impl Drop for QuicStream {
+    fn drop(&mut self) {
+        if let Err(err) = self.send.finish() {
+            log::debug!("Native QUIC send stream already closed: {}", err);
+        }
+        let stopped = self.send.stopped();
+        let receive = self.recv.take();
+        let session = self.session.clone();
+        let runtime = session.runtime.clone();
+        // A QUIC flush only queues data. Retain the connection and its receive
+        // stream until the final bytes are acknowledged, or the idle limit expires.
+        runtime.spawn(async move {
+            let _receive = receive;
+            match tokio::time::timeout(Duration::from_secs(30), stopped).await {
+                Ok(Ok(_)) => {}
+                Ok(Err(err)) => log::debug!("Native QUIC final acknowledgement failed: {}", err),
+                Err(_) => log::debug!("Native QUIC final acknowledgement timed out"),
+            }
+            drop(session);
+        });
+    }
 }
 
 impl AsyncRead for QuicStream {
@@ -460,7 +485,10 @@ impl AsyncRead for QuicStream {
         cx: &mut Context<'_>,
         buffer: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        AsyncRead::poll_read(Pin::new(&mut self.recv), cx, buffer)
+        match self.recv.as_mut() {
+            Some(recv) => AsyncRead::poll_read(Pin::new(recv), cx, buffer),
+            None => Poll::Ready(Err(io::ErrorKind::NotConnected.into())),
+        }
     }
 }
 
